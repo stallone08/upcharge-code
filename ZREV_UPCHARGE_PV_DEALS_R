@@ -1,0 +1,159 @@
+************************************************************************
+*  MEDLINE INDUSTRIES - ECC development
+************************************************************************
+* Report      -  ZREV_UPCHARGE_PV_DEALS_R
+* RICEF ID   -
+* Date   : 09/28/2023
+* Jira No : RT-10640
+* Requested By  : Saurav Singh
+* Description   : Extract Customer upchagre values
+* Developer   : Stallone Christian
+* Reviewer   :
+* Requirements  :
+* CRD     : \\Fig\PROJ\documentation\
+* CSD      : \\Fig\PROJ\documentation\
+************************************************************************
+* Change Log :
+*-----------------------------------------------------------------------
+* Mod date            Developer         Description
+*
+*-----------------------------------------------------------------------
+REPORT zrev_upcharge_pv_deals_r.
+TABLES:
+  zrev_sd_data.
+CONSTANTS co_tcode TYPE sy-tcode VALUE 'ZVUPCHG'.
+
+*INCLUDE zrev_upcharge_pv_deals_top.
+"Selection Screen
+*<<<<<<<<<<<<<----------------------->>>>>>>>>>>>>>>>>>>>
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-000.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_anum.
+PARAMETERS   p_anum RADIOBUTTON GROUP r0 USER-COMMAND pick.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_pvs.
+PARAMETERS    p_pvs RADIOBUTTON GROUP r0 DEFAULT 'X'.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN ULINE.
+"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(25) ts_pvds MODIF ID a2.
+SELECT-OPTIONS s_pvds FOR zrev_sd_data-pv_sold_to NO INTERVALS MODIF ID a2. "@8V@
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(25) ts_knuma MODIF ID a1.
+SELECT-OPTIONS s_knuma FOR zrev_sd_data-knuma_ag NO INTERVALS MODIF ID a1. "@8V@
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_date.
+PARAMETERS p_date TYPE sy-datum DEFAULT sy-datum OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN ULINE.
+"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*
+"With Open Request
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_both.
+PARAMETERS   p_both RADIOBUTTON GROUP r1 DEFAULT 'X'.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_eitm.
+PARAMETERS    p_eitm RADIOBUTTON GROUP r1.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_itms.
+PARAMETERS p_itms RADIOBUTTON GROUP r1.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN ULINE.
+"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*"*
+
+SELECTION-SCREEN SKIP 1.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_file.
+PARAMETERS p_file AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(28) ts_alv.
+PARAMETERS p_alv AS CHECKBOX.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN END OF BLOCK b1.
+*<<<<<<<<<<<<<----------------------->>>>>>>>>>>>>>>>>>>>
+INCLUDE zrev_upcharge_pv_deals_inc.
+
+LOAD-OF-PROGRAM.
+  ts_anum = '@DD@ Agreements'.
+  ts_pvs  = '@8V@ Eligibility'.
+
+  ts_pvds  = '@8V@ Eligibility'. "PV Deals
+  ts_knuma = '@DD@ Agreement Number'.
+  ts_date  = '@1U@ Validity date'.
+
+  ts_both = '@EZ@ Both report'.
+  ts_eitm = '@AQ@ Exc Item Spec'.
+  ts_itms = '@A6@ Item Spec'.
+
+  ts_file = '@HK@ Download files'.
+  ts_alv  = '@LZ@ ALV report'.
+
+AT SELECTION-SCREEN OUTPUT.
+
+  LOOP AT SCREEN.
+    IF p_anum IS NOT INITIAL
+      AND screen-group1 = 'A2'.
+      screen-active = 0.
+      MODIFY SCREEN.
+    ELSEIF p_pvs IS NOT INITIAL
+      AND screen-group1 = 'A1'.
+      screen-active = 0.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
+AT SELECTION-SCREEN.
+  CASE sy-ucomm.
+*    WHEN 'PICK'.
+    WHEN 'ONLI'.
+      IF p_pvs IS NOT INITIAL AND s_pvds[] IS INITIAL.
+        "Please enter valid PV deals / Sold to
+        MESSAGE text-006 TYPE 'E'.
+      ENDIF.
+
+      "Please enter valid Agreement number
+      IF p_anum IS NOT INITIAL AND s_knuma[] IS INITIAL.
+        MESSAGE text-007 TYPE 'E'.
+      ENDIF.
+    WHEN OTHERS.
+  ENDCASE.
+
+START-OF-SELECTION.
+  AUTHORITY-CHECK OBJECT 'S_TCODE'
+           ID 'TCD' FIELD co_tcode.
+  IF sy-subrc <> 0.
+    MESSAGE i999(zv) WITH text-005. "'No authorization to run ZVUPCHG'.
+    LEAVE TO SCREEN 0.
+  ENDIF.
+
+  obj_methods = NEW lcl_zrev_upcharge_pv_deals( ).
+  IF obj_methods IS NOT BOUND.
+    LEAVE TO SCREEN 0.
+  ENDIF.
+
+  "Get Data
+  IF obj_methods->fetch_zrev_sd_data( ) IS NOT INITIAL.
+    MESSAGE text-001 TYPE 'I' DISPLAY LIKE 'E'.
+    LEAVE TO TRANSACTION sy-tcode.
+  ENDIF.
+
+
+END-OF-SELECTION.
+  "Load output, Generate files and ALV
+  obj_methods->load_output( ).
