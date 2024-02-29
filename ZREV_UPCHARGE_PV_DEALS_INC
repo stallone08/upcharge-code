@@ -1,0 +1,407 @@
+*&---------------------------------------------------------------------*
+*&  Include           ZREV_UPCHARGE_PV_DEALS_TOP
+*&---------------------------------------------------------------------*
+DATA:
+  it_item_spec_data     TYPE zrev_pv_deals_item_tt, "zrev_pv_deals_exc_item_tt , "zrev_pv_deals_item_tt,
+  it_exc_item_spec_data TYPE zrev_pv_deals_item_tt, "zrev_pv_deals_exc_item_tt , "zrev_pv_deals_item_tt.
+  it_alv_data           TYPE zrev_pv_deals_item_tt.
+
+CLASS lcl_zrev_upcharge_pv_deals DEFINITION FINAL.
+  PUBLIC SECTION.
+    DATA:
+      lv_excp_item_spec TYPE char1,
+      lv_item_spec      TYPE char1,
+      lv_filelen        TYPE i.
+
+    CONSTANTS:
+      co_zrev_item_stru     TYPE dd03l-tabname VALUE 'ZREV_PV_DEALS_ITEM_STRU', "'ZREV_PV_DEALS_EXC_ITEM_STRU',
+      co_zrev_exc_item_stru TYPE dd03l-tabname VALUE 'ZREV_PV_DEALS_ITEM_STRU'. "'ZREV_PV_DEALS_EXC_ITEM_STRU'.
+
+    METHODS:
+      constructor,
+      fetch_zrev_sd_data  RETURNING VALUE(r_no_data) TYPE char1,
+      load_output,
+      load_alv  IMPORTING i_alv_struc  TYPE dd03l-tabname
+                          i_grid_title TYPE lvc_title
+                          i_item_spec  TYPE char1,
+      save_excel_files,
+      itab_to_xstring
+        IMPORTING i_data_ref         TYPE REF TO data
+        RETURNING VALUE(r_solix_tab) TYPE solix_tab,
+      create_excel_file IMPORTING i_folder_path TYPE string
+                                  i_filesub1    TYPE char100
+                                  i_data_ref    TYPE REF TO data,
+      create_filename IMPORTING i_folderpath      TYPE string
+                                i_filesub1        TYPE char100
+                      RETURNING VALUE(r_filename) TYPE string.
+
+ENDCLASS.
+CLASS lcl_zrev_upcharge_pv_deals IMPLEMENTATION.
+  METHOD constructor.
+    IF p_file IS INITIAL AND p_alv IS INITIAL.
+      p_alv = abap_true.
+    ENDIF.
+
+    lv_excp_item_spec = xsdbool( p_both IS NOT INITIAL OR p_eitm IS NOT INITIAL ).
+    lv_item_spec      = xsdbool( p_both IS NOT INITIAL OR p_itms IS NOT INITIAL ).
+
+  ENDMETHOD.
+
+  METHOD fetch_zrev_sd_data.
+    DATA  lv_r_item_spec     TYPE RANGE OF zrev_sd_data-item_spec.
+
+
+    IF lv_excp_item_spec IS NOT INITIAL.
+      lv_r_item_spec = VALUE #( sign = zcl_mdep_methods=>sign_i option = zcl_mdep_methods=>option_eq ( low = abap_false ) ).
+    ENDIF.
+    IF lv_item_spec IS NOT INITIAL.
+      lv_r_item_spec = VALUE #( BASE lv_r_item_spec sign = zcl_mdep_methods=>sign_i option = zcl_mdep_methods=>option_eq ( low = abap_true ) ).
+    ENDIF.
+
+    "//// All Except Item Specific data which are from KNVP, A727, A733, A728, A732, KONP
+    "//// All Item Specific data which are from KNVP, A727, A733, A731, KONP
+    "// Z, ZG, YD, YG & YV
+    IF p_pvs IS NOT INITIAL.
+
+      SELECT DISTINCT
+      z1~eligibility AS pv_kunnr,
+      z1~knuma_ag,
+
+      z1~krech,
+      z1~kbetr,
+      z1~konwa,
+      z1~kpein,
+      z1~kmein,
+
+      z1~boart,
+      z1~datab,
+      z1~datbi,
+      z1~irm_fgnum,
+      z1~cond_datab,
+      z1~cond_datbi,
+
+      "/// Except item specific
+      z1~zzprd_div1,
+      z1~matnr1,
+      z1~matkl1,
+      z1~zzmfrcode1,
+      z1~vkorg1,
+
+      "// Item specific
+      z1~zzprd_div2,
+      z1~matnr2,
+      z1~matkl2,
+      z1~zzmfrcode2,
+      z1~vkorg2,
+
+      z1~item_spec,
+
+      z1~kschl,
+      z~low AS add_kschl
+  FROM zrev_sd_data2 AS z1  INNER JOIN zrev_upchrg_conf AS z "#EC CI_BUFFJOIN
+  ON z~name = z1~cond_key
+   INTO TABLE @DATA(lt_sd_data)
+      WHERE
+        eligibility    IN @s_pvds
+      AND ( a726_datab LE @p_date AND a726_datbi GE @p_date )
+      AND ( cond_datab LE @p_date AND cond_datbi GE @p_date )
+      AND item_spec IN @lv_r_item_spec.
+
+      "Only Agreement run
+    ELSEIF p_anum IS NOT INITIAL.
+      SELECT DISTINCT
+        z1~eligibility AS pv_kunnr,
+        z1~knuma_ag,
+
+        z1~krech,
+        z1~kbetr,
+        z1~konwa,
+        z1~kpein,
+        z1~kmein,
+
+        z1~boart,
+        z1~datab,
+        z1~datbi,
+        z1~irm_fgnum,
+        z1~cond_datab,
+        z1~cond_datbi,
+
+        "/// Except item specific
+        z1~zzprd_div1,
+        z1~matnr1,
+        z1~matkl1,
+        z1~zzmfrcode1,
+        z1~vkorg1,
+
+        "// Item specific
+        z1~zzprd_div2,
+        z1~matnr2,
+        z1~matkl2,
+        z1~zzmfrcode2,
+        z1~vkorg2,
+
+        z1~item_spec,
+
+        z1~kschl,
+        z~low AS add_kschl
+    FROM zrev_sd_data2 AS z1  INNER JOIN zrev_upchrg_conf AS z "#EC CI_BUFFJOIN
+    ON z~name = z1~cond_key
+     INTO TABLE @lt_sd_data
+        WHERE
+          knuma_ag    IN @s_knuma
+        AND ( a726_datab LE @p_date AND a726_datbi GE @p_date )
+        AND ( cond_datab LE @p_date AND cond_datbi GE @p_date )
+        AND item_spec IN @lv_r_item_spec.
+    ENDIF.
+
+    r_no_data = xsdbool( lt_sd_data IS INITIAL ).
+    sort lt_sd_data.
+    DELETE ADJACENT DUPLICATES FROM lt_sd_data COMPARING ALL FIELDS.
+
+    IF lt_sd_data IS NOT INITIAL.
+      SORT lt_sd_data BY item_spec.
+      DESCRIBE TABLE lt_sd_data LINES DATA(total_line).
+
+      READ TABLE lt_sd_data TRANSPORTING NO FIELDS BINARY SEARCH WITH KEY item_spec = abap_true.
+      IF sy-subrc = 0.
+        DATA(line_index)  = sy-tabix.
+      ELSE.
+        line_index = total_line + 1.
+      ENDIF.
+
+      IF lv_excp_item_spec IS NOT INITIAL AND line_index GT 1.
+        APPEND LINES OF CORRESPONDING zrev_pv_deals_item_tt( lt_sd_data MAPPING
+        zzprd_div = zzprd_div1
+        matnr     = matnr1
+        matkl     = matkl1
+        zzmfrcode = zzmfrcode1
+        vkorg     = vkorg1
+
+         ) FROM 1 TO ( line_index - 1 ) TO it_exc_item_spec_data.
+        SORT it_exc_item_spec_data BY pv_kunnr knuma_ag.
+      ENDIF.
+
+      IF lv_item_spec IS NOT INITIAL AND line_index NE ( total_line + 1 ).
+        APPEND LINES OF CORRESPONDING zrev_pv_deals_item_tt( lt_sd_data MAPPING
+        zzprd_div = zzprd_div2
+        matnr     = matnr2
+        matkl     = matkl2
+        zzmfrcode = zzmfrcode2
+        vkorg     = vkorg2
+        ) FROM line_index TO total_line TO it_item_spec_data.
+        SORT it_item_spec_data BY pv_kunnr knuma_ag.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD load_output.
+    IF  it_exc_item_spec_data IS INITIAL AND it_item_spec_data IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    "Save Excel File
+    IF p_file IS NOT INITIAL.
+      me->save_excel_files( ).
+    ENDIF.
+
+    "Load an ALV list
+    IF p_alv IS NOT INITIAL.
+      IF lv_excp_item_spec IS NOT INITIAL.
+        me->load_alv( EXPORTING i_grid_title = text-002 "All Except Item Specific
+                                i_alv_struc = co_zrev_exc_item_stru
+                                i_item_spec = abap_false
+                                  ). "CHANGING c_it_zrev_sd_data =  it_exc_item_spec_data
+      ENDIF.
+      IF lv_item_spec IS NOT INITIAL.
+        me->load_alv( EXPORTING i_grid_title = text-003 "Item Specific
+                                i_alv_struc = co_zrev_item_stru
+                                i_item_spec = abap_true
+                                 ). "CHANGING c_it_zrev_sd_data = it_item_spec_data
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+  METHOD load_alv.
+    DATA:
+      "Grid
+      lwa_layout  TYPE lvc_s_layo,
+      lt_sort_lvc TYPE  lvc_t_sort.
+
+    lt_sort_lvc = VALUE #( ( spos      = 1
+                             fieldname = 'PV_KUNNR'
+                             down        = abap_true
+                             group     = 'G1'
+                              )
+                              ( spos   = 2
+                             fieldname = 'KNUMA_AG'
+                             down        = abap_true
+                             group     = 'G1'
+                              )
+                              ).
+    lwa_layout-cwidth_opt = abap_true.
+
+    IF i_item_spec IS INITIAL.
+      it_alv_data = it_exc_item_spec_data.
+    ELSE.
+      it_alv_data = it_item_spec_data.
+    ENDIF.
+
+    IF it_alv_data IS NOT INITIAL.
+      "Load an ALV fm
+      CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY_LVC'
+        EXPORTING
+          i_callback_program = sy-repid
+          is_layout_lvc      = lwa_layout
+          i_structure_name   = i_alv_struc
+          i_save             = 'A'
+          i_grid_title       = i_grid_title
+          it_sort_lvc        = lt_sort_lvc
+*         it_fieldcat_lvc    = lt_fieldcat
+        TABLES
+          t_outtab           = it_alv_data "c_it_zrev_sd_data
+        EXCEPTIONS
+          program_error      = 1
+          OTHERS             = 2.
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid TYPE 'I' NUMBER sy-msgno
+                     WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD save_excel_files.
+    DATA:
+      lv_folder_path TYPE string,
+      lv_title       TYPE string.
+
+    lv_title = text-004.
+    CALL METHOD cl_gui_frontend_services=>directory_browse
+      EXPORTING
+        window_title         = lv_title
+*       initial_folder       =
+      CHANGING
+        selected_folder      = lv_folder_path
+      EXCEPTIONS
+        cntl_error           = 1
+        error_no_gui         = 2
+        not_supported_by_gui = 3
+        OTHERS               = 4.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE 'I' NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      RETURN.
+    ENDIF.
+
+    IF lv_folder_path IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    "All Except Item Specific
+    IF lv_excp_item_spec IS NOT INITIAL.
+      GET REFERENCE OF it_exc_item_spec_data INTO DATA(lv_data_ref1).
+      me->create_excel_file( EXPORTING i_folder_path = lv_folder_path
+                                       i_filesub1 = text-002
+                                       i_data_ref = lv_data_ref1
+                                       ).
+    ENDIF.
+
+    "Item Specific
+    IF lv_item_spec IS NOT INITIAL.
+      GET REFERENCE OF it_item_spec_data INTO DATA(lv_data_ref2).
+      me->create_excel_file( EXPORTING i_folder_path = lv_folder_path
+                                       i_filesub1 = text-003
+                                       i_data_ref = lv_data_ref2
+                                       ).
+    ENDIF.
+  ENDMETHOD.
+  METHOD create_excel_file.
+    IF i_data_ref IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    DATA(lt_data_tab) = me->itab_to_xstring( EXPORTING i_data_ref  = i_data_ref         ).
+    IF lt_data_tab IS NOT INITIAL.
+      DATA(lv_filename) = me->create_filename( EXPORTING i_folderpath = i_folder_path
+                                     i_filesub1   =  i_filesub1 ).
+      IF lv_filename IS NOT INITIAL.
+        cl_gui_frontend_services=>gui_download( EXPORTING
+                                                       filename = lv_filename
+                                                       bin_filesize = lv_filelen
+                                                       filetype = 'BIN'
+                                              CHANGING data_tab = lt_data_tab
+                                            EXCEPTIONS OTHERS   = 1 ).
+        IF sy-subrc = 0.
+          MESSAGE |{ lv_filename } saved successfuly | TYPE 'S'.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+  METHOD create_filename.
+    r_filename = |{ i_folderpath }| && `\` && |{ i_filesub1 } { sy-datum }{ sy-uzeit }.xlsx|.
+  ENDMETHOD.
+
+  METHOD itab_to_xstring.
+    DATA lv_xstring TYPE xstring.
+    FIELD-SYMBOLS <fs_table> TYPE ANY TABLE.
+
+    IF i_data_ref IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    ASSIGN i_data_ref->* TO <fs_table>.
+    IF <fs_table> IS ASSIGNED AND <fs_table> IS NOT INITIAL.
+    ELSE.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        cl_salv_table=>factory(
+          IMPORTING r_salv_table = DATA(lo_table)
+          CHANGING  t_table      = <fs_table> ). "c_it_sd_data
+
+        DATA(lt_fcat) =
+          cl_salv_controller_metadata=>get_lvc_fieldcatalog(
+            r_columns      = lo_table->get_columns( )
+            r_aggregations = lo_table->get_aggregations( ) ).
+
+*        "//Hide CAG Number for Agreement run
+*        IF p_anum IS NOT INITIAL.
+*          DELETE lt_fcat WHERE fieldname = 'CAG_KUNNR'.
+*        ENDIF.
+
+        "end
+        DATA(lo_result) =
+          cl_salv_ex_util=>factory_result_data_table(
+            r_data         = i_data_ref
+            t_fieldcatalog = lt_fcat ).
+
+        cl_salv_bs_tt_util=>if_salv_bs_tt_util~transform(
+          EXPORTING
+            xml_type      = if_salv_bs_xml=>c_type_xlsx
+            xml_version   = cl_salv_bs_a_xml_base=>get_version( )
+            r_result_data = lo_result
+            xml_flavour   = if_salv_bs_c_tt=>c_tt_xml_flavour_export
+            gui_type      = if_salv_bs_xml=>c_gui_type_gui
+          IMPORTING
+            xml           = lv_xstring ).
+
+        CLEAR lv_filelen.
+        CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+          EXPORTING
+            buffer        = lv_xstring
+*           APPEND_TO_TABLE       = ' '
+          IMPORTING
+            output_length = lv_filelen
+          TABLES
+            binary_tab    = r_solix_tab.
+
+      CATCH cx_root.
+        CLEAR r_solix_tab.
+    ENDTRY.
+
+    UNASSIGN <fs_table>.
+  ENDMETHOD.
+ENDCLASS.
+
+
+DATA:
+      obj_methods TYPE REF TO lcl_zrev_upcharge_pv_deals.
